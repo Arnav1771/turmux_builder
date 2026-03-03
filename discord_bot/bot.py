@@ -111,8 +111,10 @@ async def build_command(interaction: discord.Interaction, description: str):
         if len(how_to_run) > 1000:
             how_to_run = how_to_run[:997] + "..."
 
+        live_url = result.get("live_url")
+        embed_title = "✅ App Generated, Deployed & Live! 🌐" if live_url else "✅ App Generated & Pushed to GitHub!"
         success_embed = discord.Embed(
-            title="✅ App Generated & Pushed to GitHub!",
+            title=embed_title,
             color=0x00C851,
         )
         success_embed.add_field(
@@ -120,6 +122,12 @@ async def build_command(interaction: discord.Interaction, description: str):
             value=f"[{result['repo_name']}]({result['repo_url']}) *(private)*",
             inline=False,
         )
+        if live_url:
+            success_embed.add_field(
+                name="🌐 Live URL",
+                value=f"[{live_url}]({live_url})",
+                inline=False,
+            )
         success_embed.add_field(
             name="📝 Description",
             value=result.get("description", description[:200]),

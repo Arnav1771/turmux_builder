@@ -70,8 +70,19 @@ class GitHubPusher:
             except GithubException as e:
                 print(f"[GitHub]   ⚠️  Skipped {gen_file.path}: {e.data.get('message', str(e))}")
 
-        print(f"[GitHub] 🎉 All files pushed to: {repo.html_url}")
-        return repo.html_url
+        print(f"[GitHub] 🎉 All files pushed to: {repo.html_url}\")")
+        return repo.html_url, repo
+
+    def update_description(self, repo, live_url: str):
+        """Update the repo description and homepage URL with the Vercel live URL."""
+        try:
+            repo.edit(
+                description=f"{repo.description} | 🚀 Live: {live_url}",
+                homepage=live_url,
+            )
+            print(f"[GitHub] ✅ Repo description updated with live URL: {live_url}")
+        except Exception as e:
+            print(f"[GitHub] ⚠️ Failed to update repo description: {e}")
 
     def _safe_repo_name(self, name: str) -> str:
         """Ensure repo name is valid for GitHub (alphanumeric + hyphens)."""

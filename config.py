@@ -28,6 +28,9 @@ class Config:
     # Discord
     DISCORD_BOT_TOKEN: str = os.getenv("DISCORD_BOT_TOKEN", "")
 
+    # Vercel (optional — enables auto-deploy)
+    VERCEL_TOKEN: str = os.getenv("VERCEL_TOKEN", "")
+
     @classmethod
     def validate(cls):
         """Raise an error if critical secrets are missing."""
