@@ -5,7 +5,7 @@ Takes an NLP prompt, returns an AppBundle with all generated content.
 
 from dataclasses import dataclass, field
 from typing import List
-from core.gemini_client import GeminiClient
+from core.groq_client import GroqClient as AIClient
 
 
 @dataclass
@@ -27,7 +27,7 @@ class AppBundle:
 
 class AppGenerator:
     def __init__(self):
-        self.gemini = GeminiClient()
+        self.ai = AIClient()
 
     def generate(self, prompt: str) -> AppBundle:
         """
@@ -42,7 +42,7 @@ class AppGenerator:
         print(f"[AppGenerator] Processing: \"{prompt[:80]}{'...' if len(prompt) > 80 else ''}\"")
         
         # Step 1: Call Gemini
-        raw = self.gemini.generate_app(prompt)
+        raw = self.ai.generate_app(prompt)
         
         # Step 2: Parse files (already built by gemini_client for the web-app approach)
         files = [

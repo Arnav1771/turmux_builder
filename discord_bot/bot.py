@@ -196,12 +196,12 @@ async def status_command(interaction: discord.Interaction):
 # Models the user can choose from. Stored as a module-level variable so /build picks it up.
 
 AVAILABLE_MODELS = {
-    "gemini-2.5-flash": "Gemini 2.5 Flash — Fastest, best for most apps (default)",
-    "gemini-2.0-flash": "Gemini 2.0 Flash — Reliable, excellent quality",
-    "gemini-1.5-pro":   "Gemini 1.5 Pro — Most capable, slower (best for complex apps)",
-    "gemini-1.5-flash": "Gemini 1.5 Flash — Older fast model",
+    "llama-3.3-70b-versatile": "LLaMA 3.3 70B — Best quality, smartest code (default)",
+    "llama-3.1-8b-instant":    "LLaMA 3.1 8B Instant — Fastest, good for simple apps",
+    "mixtral-8x7b-32768":      "Mixtral 8x7B — Huge 32k context, great for large apps",
+    "gemma2-9b-it":            "Gemma 2 9B — Google's model via Groq, balanced",
 }
-_active_model: str = "gemini-2.5-flash"
+_active_model: str = "llama-3.3-70b-versatile"
 
 
 # ── /model command ─────────────────────────────────────────────────────────────
@@ -221,9 +221,9 @@ class ModelSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         global _active_model
         _active_model = self.values[0]
-        # Patch the GeminiClient class globally
-        from core.gemini_client import GeminiClient
-        GeminiClient._override_model = _active_model
+        # Patch the GroqClient class globally
+        from core.groq_client import GroqClient
+        GroqClient._override_model = _active_model
         await interaction.response.send_message(
             f"✅ Active model switched to `{_active_model}`\nAll future `/build` commands will use this model.",
             ephemeral=True
@@ -259,30 +259,31 @@ async def apiinfo_command(interaction: discord.Interaction):
     embed = discord.Embed(title="📊 API Info & Quota", color=0x4285F4)
     embed.add_field(name="🧠 Active Model", value=f"`{_active_model}`", inline=False)
 
-    # Check Gemini models list via REST
+    # Check Groq API
     try:
+        import requests as req
         r = req.get(
-            "https://generativelanguage.googleapis.com/v1beta/models",
-            params={"key": config.GEMINI_API_KEY},
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {config.GROQ_API_KEY}"},
             timeout=10,
         )
         if r.status_code == 200:
-            models = r.json().get("models", [])
-            flash_models = [m["name"].split("/")[-1] for m in models if "flash" in m["name"] or "pro" in m["name"]]
+            models_data = r.json().get("data", [])
+            model_names = [m["id"] for m in models_data if "llama" in m["id"] or "mistral" in m["id"] or "mixtral" in m["id"] or "gemma" in m["id"]]
             embed.add_field(
-                name="✅ Gemini API",
-                value=f"Connected • {len(models)} models available",
+                name="✅ Groq API",
+                value=f"Connected • {len(models_data)} models available",
                 inline=True,
             )
             embed.add_field(
-                name="🔥 Available For You",
-                value="\n".join(f"• `{m}`" for m in flash_models[:8]) or "None found",
+                name="🔥 Available Models",
+                value="\n".join(f"• `{m}`" for m in model_names[:8]) or "None found",
                 inline=False,
             )
         else:
-            embed.add_field(name="❌ Gemini API", value=f"Error {r.status_code}: {r.text[:100]}", inline=True)
+            embed.add_field(name="❌ Groq API", value=f"Error {r.status_code}: {r.text[:100]}", inline=True)
     except Exception as e:
-        embed.add_field(name="❌ Gemini API", value=f"Connection failed: {e}", inline=True)
+        embed.add_field(name="❌ Groq API", value=f"Connection failed: {e}", inline=True)
 
     # Check Vercel account info
     if config.VERCEL_TOKEN:
@@ -304,12 +305,13 @@ async def apiinfo_command(interaction: discord.Interaction):
         embed.add_field(name="🚀 Vercel", value="⚠️ Token not set", inline=True)
 
     embed.add_field(
-        name="📋 Gemini Rate Limits (Free Tier)",
+        name="📋 Groq Rate Limits (Free Tier)",
         value=(
-            "• **gemini-2.5-flash**: 10 RPM / 500 RPD / 1M TPM\n"
-            "• **gemini-1.5-pro**: 2 RPM / 50 RPD / 32K TPM\n"
-            "• **gemini-1.5-flash**: 15 RPM / 1500 RPD / 1M TPM\n"
-            "• RPM = Requests/min, RPD = Requests/day, TPM = Tokens/min"
+            "• **llama-3.3-70b-versatile**: 30 RPM / 14,400 RPD / 131k tokens/min\n"
+            "• **llama-3.1-8b-instant**: 30 RPM / 14,400 RPD / 131k tokens/min\n"
+            "• **mixtral-8x7b-32768**: 30 RPM / 14,400 RPD / 5k tokens/min\n"
+            "• **gemma2-9b-it**: 30 RPM / 14,400 RPD / 15k tokens/min\n"
+            "• RPM = Requests/min, RPD = Requests/day"
         ),
         inline=False,
     )
@@ -327,20 +329,20 @@ async def keys_command(interaction: discord.Interaction):
 
     embed = discord.Embed(title="🔑 API Keys — Live Check", color=0x4285F4)
 
-    # ── Check Gemini ──
+    # ── Check Groq ──
     try:
-        r = req.get(
-            "https://generativelanguage.googleapis.com/v1beta/models",
-            params={"key": config.GEMINI_API_KEY},
+        rg2 = req.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {config.GROQ_API_KEY}"},
             timeout=10,
         )
-        if r.status_code == 200:
-            count = len(r.json().get("models", []))
-            embed.add_field(name="🤖 Gemini API", value=f"✅ Valid — {count} models accessible", inline=False)
+        if rg2.status_code == 200:
+            count = len(rg2.json().get("data", []))
+            embed.add_field(name="⚡ Groq API", value=f"✅ Valid — {count} models accessible", inline=False)
         else:
-            embed.add_field(name="🤖 Gemini API", value=f"❌ Invalid ({r.status_code})", inline=False)
+            embed.add_field(name="⚡ Groq API", value=f"❌ Invalid ({rg2.status_code})", inline=False)
     except Exception as e:
-        embed.add_field(name="🤖 Gemini API", value=f"❌ Error: {e}", inline=False)
+        embed.add_field(name="⚡ Groq API", value=f"❌ Error: {e}", inline=False)
 
     # ── Check GitHub ──
     try:

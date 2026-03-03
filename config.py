@@ -31,6 +31,9 @@ class Config:
     # Vercel (optional — enables auto-deploy)
     VERCEL_TOKEN: str = os.getenv("VERCEL_TOKEN", "")
 
+    # Groq AI
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+
     @classmethod
     def validate(cls):
         """Raise an error if critical secrets are missing."""
