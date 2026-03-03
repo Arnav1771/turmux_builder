@@ -121,7 +121,13 @@ class VercelDeployer:
             "name": repo_name,
             "files": vercel_files,
             "projectSettings": {
-                "framework": None,  # Let Vercel auto-detect
+                "framework": None,
+                "installCommand": None,
+                "buildCommand": None,
+                "outputDirectory": None,
+                "rootDirectory": None,
+                "devCommand": None,
+                "commandForIgnoringBuildStep": None,
             },
             "target": "production",
         }
