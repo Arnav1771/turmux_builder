@@ -69,12 +69,14 @@ class VercelDeployer:
             return None
         paths = [f["path"] for f in files]
         main_file = next(
-            (p.replace(".py", "") for p in ["app.py", "main.py", "server.py"] if p in paths),
-            "app"
+            (p for p in ["app.py", "main.py", "server.py"] if p in paths),
+            "app.py"
         )
+        # Use 'rewrites' instead of 'routes' — routes conflicts with Vercel's
+        # modern routing system (invalid_mixed_routes error)
         return {
-            "builds": [{"src": f"{main_file}.py", "use": "@vercel/python"}],
-            "routes": [{"src": "/(.*)", "dest": f"{main_file}.py"}]
+            "builds": [{"src": main_file, "use": "@vercel/python"}],
+            "rewrites": [{"source": "/(.*)", "destination": f"/{main_file}"}]
         }
 
     def deploy(self, repo_name: str, files: list, tech_stack: list) -> str:
