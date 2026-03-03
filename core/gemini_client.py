@@ -53,9 +53,9 @@ RULES:
 class GeminiClient:
     def __init__(self):
         genai.configure(api_key=config.GEMINI_API_KEY)
-        # gemini-2.5-flash — best quality + generous free-tier quota
+        # Using gemini-1.5-flash for speed and reliability
         self.model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-1.5-flash",
             system_instruction=SYSTEM_PROMPT,
         )
 
@@ -72,8 +72,8 @@ class GeminiClient:
                 response = self.model.generate_content(
                     contents=user_prompt,
                     generation_config=genai.GenerationConfig(
-                        temperature=0.2,
-                        max_output_tokens=8192,
+                        temperature=0.1,  # Lower temperature for more consistent JSON
+                        max_output_tokens=65536,  # Significantly increased limit
                     ),
                 )
                 break  # success
@@ -92,17 +92,50 @@ class GeminiClient:
         raw_text = response.text.strip()
         
         # Strip markdown code fences if Gemini wraps response in ```json ... ```
-        if raw_text.startswith("```"):
-            raw_text = re.sub(r"^```[a-z]*\n?", "", raw_text)
-            raw_text = re.sub(r"\n?```$", "", raw_text)
-            raw_text = raw_text.strip()
+        if "```json" in raw_text:
+            raw_text = re.sub(r"```json\s*", "", raw_text)
+            raw_text = re.sub(r"\s*```", "", raw_text)
+        elif "```" in raw_text:
+            # Generic fence
+            components = raw_text.split("```")
+            if len(components) >= 3:
+                raw_text = components[1]
+                # If the first line of the block is a language name (e.g. 'json'), remove it
+                raw_text = re.sub(r"^\w+\n", "", raw_text)
+
+        raw_text = raw_text.strip()
 
         try:
             data = json.loads(raw_text)
         except json.JSONDecodeError as e:
-            raise ValueError(
-                f"Gemini returned invalid JSON: {e}\n\nRaw response:\n{raw_text[:500]}"
-            )
+            # Attempt basic repair for truncation (missing closing braces)
+            print(f"[Gemini] ⚠️ JSON parse error: {e}. Attempting basic repair...")
+            repaired_text = raw_text
+            
+            # Count braces and brackets
+            open_braces = repaired_text.count('{')
+            close_braces = repaired_text.count('}')
+            open_brackets = repaired_text.count('[')
+            close_brackets = repaired_text.count(']')
+            
+            # Very naive repair: just append missing closers
+            # This handles cases where Gemini just cut off at the very end
+            if open_brackets > close_brackets:
+                repaired_text += ']' * (open_brackets - close_brackets)
+            if open_braces > close_braces:
+                repaired_text += '}' * (open_braces - close_braces)
+                
+            try:
+                data = json.loads(repaired_text)
+                print(f"[Gemini] ✅ JSON repair successful.")
+            except:
+                # If repair fails, provide the end of the text for debugging
+                snippet = raw_text[-100:]
+                raise ValueError(
+                    f"Gemini returned invalid JSON: {e}\n\n"
+                    f"End of response: ...{snippet}\n\n"
+                    "Please try a simpler description or try again."
+                )
 
         # Validate required keys
         required_keys = ["repo_name", "description", "files", "readme", "how_to_run"]
