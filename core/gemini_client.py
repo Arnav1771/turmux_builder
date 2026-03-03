@@ -69,10 +69,10 @@ class GeminiClient:
             try:
                 response = self.client.models.generate_content(
                     model=self.model_name,
-                    contents=user_prompt,
+                    contents=user_prompt + "\n\nCRITICAL: DO NOT get stuck in a repetition loop. Output concise, complete code and terminate normally. Your output must fit within the token limit.",
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_PROMPT,
-                        temperature=0.1,  # Lower temperature for more consistent JSON
+                        temperature=0.4,  # Increased from 0.1 to prevent repetition loops
                         max_output_tokens=65536,  # Significantly increased limit
                     ),
                 )
