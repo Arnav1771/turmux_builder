@@ -12,6 +12,9 @@ echo "  🚀 AppBuilder Termux Setup"
 echo "======================================"
 echo ""
 
+# Define script directory early for path resolution
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Update + upgrade
 echo "[1/5] Updating Termux packages..."
 pkg update -y && pkg upgrade -y
@@ -26,7 +29,6 @@ pip install -r "$SCRIPT_DIR/requirements.txt"
 
 # Create .env with Interactive Wizard
 echo "[4/5] Configuring environment variables..."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
 
 if [ -f "$ENV_FILE" ]; then
