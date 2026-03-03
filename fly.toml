@@ -1,0 +1,20 @@
+# fly.toml — Fly.io app configuration for AppBuilder Discord Bot
+
+app = "turmux-vibe"
+primary_region = "sin"  # Singapore — closest free region to you (South Korea/Asia)
+
+[build]
+  dockerfile = "Dockerfile"
+
+# No HTTP service — this is a pure worker (Discord bot uses WebSocket, not HTTP)
+[processes]
+  app = "python discord_bot/bot.py"
+
+# Minimal resources for free tier
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Environment variables are set via `fly secrets set` (see deploy.sh)
+# DO NOT put secrets in this file
