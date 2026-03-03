@@ -134,6 +134,15 @@ async def build_command(interaction: discord.Interaction, description: str):
             value=f"{result['file_count']} files",
             inline=True,
         )
+        
+        tokens_used = result.get("tokens_used")
+        if tokens_used:
+            success_embed.add_field(
+                name="📊 Tokens Used",
+                value=f"{tokens_used:,} / 65,536",
+                inline=True,
+            )
+            
         success_embed.add_field(
             name="🔒 Visibility",
             value="Private",

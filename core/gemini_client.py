@@ -168,5 +168,11 @@ class GeminiClient:
             if key not in data:
                 raise ValueError(f"Gemini response missing required key: '{key}'")
 
+        # Inject token usage stats
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            data["tokens_used"] = response.usage_metadata.candidates_token_count
+            data["tokens_prompt"] = response.usage_metadata.prompt_token_count
+            print(f"[Gemini] 📊 Tokens Used: {data['tokens_used']} (Prompt: {data['tokens_prompt']})")
+
         print(f"[Gemini] ✅ Generated '{data['repo_name']}' — {len(data['files'])} files")
         return data
