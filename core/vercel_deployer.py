@@ -1,16 +1,14 @@
 """
 vercel_deployer.py — Deploys a generated app to Vercel via the Vercel API.
 
-Supports:
-  - Static sites (index.html, CSS, JS)
-  - Flask/Python apps via Vercel serverless (auto-detects based on tech stack)
+Handles both personal account tokens and team-scoped tokens by auto-detecting
+the user's account type on init and passing teamId where required.
 
 Docs: https://vercel.com/docs/rest-api
 """
 
 import os
 import json
-import hashlib
 import time
 import requests
 from config import config
@@ -31,6 +29,34 @@ class VercelDeployer:
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
         }
+        # Auto-detect team ID so we can pass it in API calls if needed
+        self.team_id = self._detect_team_id()
+
+    def _detect_team_id(self) -> str | None:
+        """
+        Auto-detect if this is a team token by checking the user's default team.
+        Returns the team ID if found, None for personal accounts.
+        """
+        try:
+            resp = requests.get(f"{VERCEL_API}/v2/user", headers=self.headers, timeout=10)
+            if resp.status_code == 200:
+                user_data = resp.json().get("user", {})
+                # defaultTeamId is set when the token belongs to a team context
+                team_id = user_data.get("defaultTeamId")
+                if team_id:
+                    print(f"[Vercel] 🏢 Detected team account (teamId: {team_id})")
+                else:
+                    print(f"[Vercel] 👤 Personal account detected")
+                return team_id
+        except Exception as e:
+            print(f"[Vercel] ⚠️ Could not detect team ID: {e}")
+        return None
+
+    def _api_params(self) -> dict:
+        """Return query params — include teamId if this is a team token."""
+        if self.team_id:
+            return {"teamId": self.team_id}
+        return {}
 
     def _is_flask_app(self, files: list) -> bool:
         """Check if this is a Flask/Python backend app."""
@@ -41,14 +67,11 @@ class VercelDeployer:
         """Generate vercel.json config for Python/Flask apps."""
         if not self._is_flask_app(files):
             return None
-
-        # Find the main python file
         paths = [f["path"] for f in files]
         main_file = next(
             (p.replace(".py", "") for p in ["app.py", "main.py", "server.py"] if p in paths),
             "app"
         )
-
         return {
             "builds": [{"src": f"{main_file}.py", "use": "@vercel/python"}],
             "routes": [{"src": "/(.*)", "dest": f"{main_file}.py"}]
@@ -93,7 +116,7 @@ class VercelDeployer:
         if not vercel_files:
             raise ValueError("No files to deploy to Vercel.")
 
-        # Create deployment
+        # Create deployment (pass teamId if this is a team token)
         payload = {
             "name": repo_name,
             "files": vercel_files,
@@ -106,6 +129,7 @@ class VercelDeployer:
         resp = requests.post(
             f"{VERCEL_API}/v13/deployments",
             headers=self.headers,
+            params=self._api_params(),
             json=payload,
             timeout=60,
         )
@@ -137,6 +161,7 @@ class VercelDeployer:
             resp = requests.get(
                 f"{VERCEL_API}/v13/deployments/{deploy_id}",
                 headers=self.headers,
+                params=self._api_params(),
                 timeout=15,
             )
             if resp.status_code == 200:
