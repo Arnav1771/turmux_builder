@@ -19,9 +19,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "[1/5] Updating Termux packages..."
 pkg update -y && pkg upgrade -y
 
-# Install Python + Git + Build Tools (Critical for discord.py)
-echo "[2/5] Installing Python, Git, Build Tools..."
-pkg install -y python git clang make libffi openssl binutils
+# Install Python + Git + Build Tools + Rust (Critical for builds)
+echo "[2/5] Installing Python, Git, and Build Tools..."
+pkg install -y python git clang make libffi openssl binutils rust
+
+# Install pre-compiled cryptography to avoid lengthy/failed builds
+echo "      Installing pre-compiled cryptography..."
+pkg install -y python-cryptography
 
 # Install pip dependencies
 echo "[3/5] Installing Python dependencies..."
