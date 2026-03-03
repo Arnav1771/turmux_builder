@@ -21,11 +21,15 @@ pkg update -y && pkg upgrade -y
 
 # Install Python + Git + Build Tools + Rust (Critical for builds)
 echo "[2/5] Installing Python, Git, and Build Tools..."
-pkg install -y python git clang make libffi openssl binutils rust
+pkg install -y python git clang make libffi openssl binutils rust build-essential
 
-# Install pre-compiled cryptography to avoid lengthy/failed builds
-echo "      Installing pre-compiled cryptography..."
-pkg install -y python-cryptography
+# Fix for maturin/cryptography build: set Android API level
+export ANDROID_API_LEVEL=$(getprop ro.build.version.sdk)
+echo "      Detected Android API Level: $ANDROID_API_LEVEL"
+
+# Install pre-compiled libraries to avoid lengthy/failed builds
+echo "      Installing pre-compiled libraries (cryptography, grpcio)..."
+pkg install -y python-cryptography python-grpcio
 
 # Install pip dependencies
 echo "[3/5] Installing Python dependencies..."
