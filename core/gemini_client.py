@@ -44,9 +44,10 @@ RULES:
 
 4. Make real, functional code. Not placeholder code. Not TODO comments.
 5. Use modern best practices and patterns for the chosen tech stack.
-6. If the user doesn't specify a tech stack, choose the most appropriate one.
-7. Include error handling, logging, and environment variable support.
-8. repo_name must be all lowercase with hyphens, no spaces or special chars.
+6. EXTREMELY IMPORTANT: Keep the code CONCISE. Avoid massive SVG blocks, huge repetitive CSS, or thousands of lines of boilerplate. Focus on functional core logic. If a feature needs a lot of data, use a small sample. Your output MUST fit within the token limit.
+7. If the user doesn't specify a tech stack, choose the most appropriate one.
+8. Include error handling, logging, and environment variable support.
+9. repo_name must be all lowercase with hyphens, no spaces or special chars.
 """
 
 
