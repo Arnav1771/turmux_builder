@@ -22,7 +22,6 @@ pkg install -y python git clang make libffi openssl binutils
 
 # Install pip dependencies
 echo "[3/5] Installing Python dependencies..."
-pip install --upgrade pip
 pip install -r "$SCRIPT_DIR/requirements.txt"
 
 # Create .env with Interactive Wizard
