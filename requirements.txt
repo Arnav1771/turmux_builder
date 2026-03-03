@@ -1,5 +1,5 @@
 # AppBuilder Dependencies
-google-generativeai>=0.8.0
+google-genai>=0.4.0
 PyGithub>=2.1.1
 discord.py>=2.3.2
 python-dotenv>=1.0.0

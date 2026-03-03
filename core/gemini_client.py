@@ -3,11 +3,11 @@ gemini_client.py — Wraps the Gemini API to turn NLP prompts into structured ap
 """
 
 import time
-
 import json
 import re
 import sys
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from config import config
 
 SYSTEM_PROMPT = """
@@ -52,12 +52,9 @@ RULES:
 
 class GeminiClient:
     def __init__(self):
-        genai.configure(api_key=config.GEMINI_API_KEY)
-        # Using gemini-1.5-flash for speed and reliability
-        self.model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=SYSTEM_PROMPT,
-        )
+        # Using the new genai SDK and gemini-2.5-flash
+        self.client = genai.Client(api_key=config.GEMINI_API_KEY)
+        self.model_name = "gemini-2.5-flash"
 
     def generate_app(self, user_prompt: str) -> dict:
         """
@@ -69,9 +66,11 @@ class GeminiClient:
         last_err = None
         for attempt in range(3):
             try:
-                response = self.model.generate_content(
+                response = self.client.models.generate_content(
+                    model=self.model_name,
                     contents=user_prompt,
-                    generation_config=genai.GenerationConfig(
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
                         temperature=0.1,  # Lower temperature for more consistent JSON
                         max_output_tokens=65536,  # Significantly increased limit
                     ),
