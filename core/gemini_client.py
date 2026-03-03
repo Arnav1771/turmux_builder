@@ -107,33 +107,58 @@ class GeminiClient:
         try:
             data = json.loads(raw_text)
         except json.JSONDecodeError as e:
-            # Attempt basic repair for truncation (missing closing braces)
-            print(f"[Gemini] ⚠️ JSON parse error: {e}. Attempting basic repair...")
+            print(f"[Gemini] ⚠️ JSON parse error: {e}. Attempting advanced repair...")
             repaired_text = raw_text
             
-            # Count braces and brackets
+            # 1. If it ends inside a string (no trailing quote), add a quote
+            if repaired_text.count('"') % 2 != 0:
+                # If it ends with an escape char, remove it first so we don't escape our fix
+                if repaired_text.endswith('\\'):
+                    repaired_text = repaired_text[:-1]
+                repaired_text += '"'
+
+            # 2. Add an arbitrary amount of closing brackets/braces
+            # Count them up
             open_braces = repaired_text.count('{')
             close_braces = repaired_text.count('}')
             open_brackets = repaired_text.count('[')
             close_brackets = repaired_text.count(']')
             
-            # Very naive repair: just append missing closers
-            # This handles cases where Gemini just cut off at the very end
-            if open_brackets > close_brackets:
-                repaired_text += ']' * (open_brackets - close_brackets)
-            if open_braces > close_braces:
-                repaired_text += '}' * (open_braces - close_braces)
+            # Close whatever is currently open. Since we don't know the exact order,
+            # this is a heuristic. We'll close strings, arrays, then objects.
+            # A common truncation is inside the "files" array:
+            # "...content": "some code" }
+            # We need to add  ] } 
+            
+            # Just append a bunch of closers and let the JSON parser ignore trailing garbage? 
+            # No, standard JSON doesn't allow trailing garbage.
+            # Let's try to intelligently close it purely based on counts.
+            missing_brackets = max(0, open_brackets - close_brackets)
+            missing_braces = max(0, open_braces - close_braces)
+            
+            # If we were in the middle of a key/value pair but didn't finish the value...
+            if repaired_text.rstrip().endswith(','):
+                repaired_text = repaired_text.rstrip()[:-1]  # remove trailing comma
                 
+            # If we ended on a bare key:
+            if repaired_text.rstrip().endswith(':'):
+                repaired_text += '""' # add empty string value
+                
+            # Close arrays and objects. Usually arrays are inside objects in our schema.
+            repaired_text += ']' * missing_brackets
+            repaired_text += '}' * missing_braces
+            
             try:
                 data = json.loads(repaired_text)
-                print(f"[Gemini] ✅ JSON repair successful.")
-            except:
-                # If repair fails, provide the end of the text for debugging
-                snippet = raw_text[-100:]
+                print(f"[Gemini] ✅ Advanced JSON repair successful.")
+                data["description"] += " (Note: Output was slightly truncated and auto-repaired)"
+            except Exception as repair_e:
+                snippet = raw_text[-150:]
                 raise ValueError(
-                    f"Gemini returned invalid JSON: {e}\n\n"
+                    f"Gemini returned invalid JSON: {e}\n"
+                    f"Repair also failed: {repair_e}\n\n"
                     f"End of response: ...{snippet}\n\n"
-                    "Please try a simpler description or try again."
+                    "The requested app is too complex for a single generation. Try a simpler prompt."
                 )
 
         # Validate required keys
