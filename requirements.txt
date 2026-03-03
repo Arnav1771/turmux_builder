@@ -5,3 +5,4 @@ discord.py>=2.3.2
 python-dotenv>=1.0.0
 typing-extensions>=4.10.0
 requests>=2.31.0
+json-repair>=0.30.0

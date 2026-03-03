@@ -1,9 +1,6 @@
-"""
-gemini_client.py — Wraps the Gemini API to turn NLP prompts into structured app blueprints.
-"""
-
 import time
 import json
+import json_repair
 import re
 import sys
 from google import genai
@@ -74,6 +71,7 @@ class GeminiClient:
                         system_instruction=SYSTEM_PROMPT,
                         temperature=0.4,  # Increased from 0.1 to prevent repetition loops
                         max_output_tokens=65536,  # Significantly increased limit
+                        response_mime_type="application/json", # Native JSON Enforcement
                     ),
                 )
                 break  # success
@@ -106,61 +104,17 @@ class GeminiClient:
         raw_text = raw_text.strip()
 
         try:
-            data = json.loads(raw_text)
-        except json.JSONDecodeError as e:
-            print(f"[Gemini] ⚠️ JSON parse error: {e}. Attempting advanced repair...")
-            repaired_text = raw_text
-            
-            # 1. If it ends inside a string (no trailing quote), add a quote
-            if repaired_text.count('"') % 2 != 0:
-                # If it ends with an escape char, remove it first so we don't escape our fix
-                if repaired_text.endswith('\\'):
-                    repaired_text = repaired_text[:-1]
-                repaired_text += '"'
-
-            # 2. Add an arbitrary amount of closing brackets/braces
-            # Count them up
-            open_braces = repaired_text.count('{')
-            close_braces = repaired_text.count('}')
-            open_brackets = repaired_text.count('[')
-            close_brackets = repaired_text.count(']')
-            
-            # Close whatever is currently open. Since we don't know the exact order,
-            # this is a heuristic. We'll close strings, arrays, then objects.
-            # A common truncation is inside the "files" array:
-            # "...content": "some code" }
-            # We need to add  ] } 
-            
-            # Just append a bunch of closers and let the JSON parser ignore trailing garbage? 
-            # No, standard JSON doesn't allow trailing garbage.
-            # Let's try to intelligently close it purely based on counts.
-            missing_brackets = max(0, open_brackets - close_brackets)
-            missing_braces = max(0, open_braces - close_braces)
-            
-            # If we were in the middle of a key/value pair but didn't finish the value...
-            if repaired_text.rstrip().endswith(','):
-                repaired_text = repaired_text.rstrip()[:-1]  # remove trailing comma
-                
-            # If we ended on a bare key:
-            if repaired_text.rstrip().endswith(':'):
-                repaired_text += '""' # add empty string value
-                
-            # Close arrays and objects. Usually arrays are inside objects in our schema.
-            repaired_text += ']' * missing_brackets
-            repaired_text += '}' * missing_braces
-            
-            try:
-                data = json.loads(repaired_text)
-                print(f"[Gemini] ✅ Advanced JSON repair successful.")
-                data["description"] += " (Note: Output was slightly truncated and auto-repaired)"
-            except Exception as repair_e:
-                snippet = raw_text[-150:]
-                raise ValueError(
-                    f"Gemini returned invalid JSON: {e}\n"
-                    f"Repair also failed: {repair_e}\n\n"
-                    f"End of response: ...{snippet}\n\n"
-                    "The requested app is too complex for a single generation. Try a simpler prompt."
-                )
+            # json_repair magically fixes unescaped quotes, missing commas, and extreme truncation
+            data = json_repair.loads(raw_text)
+            if not isinstance(data, dict):
+                raise ValueError(f"Parsed JSON is not a dictionary. Got: type {type(data)}")
+        except Exception as e:
+            snippet = raw_text[-150:]
+            raise ValueError(
+                f"Gemini returned invalid JSON that could not be repaired: {e}\n\n"
+                f"End of response: ...{snippet}\n\n"
+                "The requested app is too complex for a single generation. Try a simpler prompt."
+            )
 
         # Validate required keys
         required_keys = ["repo_name", "description", "files", "readme", "how_to_run"]
