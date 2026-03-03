@@ -25,19 +25,36 @@ echo "[3/5] Installing Python dependencies..."
 pip install --upgrade pip
 pip install -r "$SCRIPT_DIR/requirements.txt"
 
-# Create .env if it doesn't exist
-echo "[4/5] Setting up .env..."
+# Create .env with Interactive Wizard
+echo "[4/5] Configuring environment variables..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
 
+if [ -f "$ENV_FILE" ]; then
+    read -p "   ⚠️  .env already exists. Overwrite? (y/n): " overwrite
+    if [[ ! $overwrite =~ ^[Yy]$ ]]; then
+        echo "   Skipping configuration."
+    else
+        rm "$ENV_FILE"
+    fi
+fi
+
 if [ ! -f "$ENV_FILE" ]; then
-    cp "$SCRIPT_DIR/.env.example" "$ENV_FILE"
     echo ""
-    echo "   ⚠️  Created .env file. Please fill in your keys:"
-    echo "   nano $ENV_FILE"
+    echo "--- 🔑 Setup Wizard ---"
+    read -p "Enter Gemini API Key: " gemini_key
+    read -p "Enter GitHub Token (Classic): " github_token
+    read -p "Enter GitHub Username: " github_user
+    read -p "Enter Discord Bot Token: " discord_token
     echo ""
-else
-    echo "   .env already exists, skipping."
+
+    cat <<EOF > "$ENV_FILE"
+GEMINI_API_KEY=$gemini_key
+GITHUB_TOKEN=$github_token
+GITHUB_USERNAME=$github_user
+DISCORD_BOT_TOKEN=$discord_token
+EOF
+    echo "   ✅ .env file generated successfully."
 fi
 
 # Make CLI executable
