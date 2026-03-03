@@ -88,12 +88,13 @@ async def build_command(interaction: discord.Interaction, description: str):
         title="🔨 Turmux Vibe — Building your app...",
         description=(
             f"**Prompt:** {description[:300]}\n\n"
-            "⏳ Calling Gemini AI to generate your full-stack app...\n"
-            "This usually takes 30–60 seconds. Hang tight!"
+            "⏳ **Step 1/2:** Planning your app architecture with Gemini AI...\n"
+            "Then generating each file one by one.\n\n"
+            "⏱️ This takes **2–3 minutes** for complex apps. Hang tight!"
         ),
-        color=0x4285F4,  # Google Blue
+        color=0x4285F4,
     )
-    working_embed.set_footer(text="Powered by Gemini AI + GitHub")
+    working_embed.set_footer(text="Powered by Gemini 2.5 Flash + GitHub")
     
     await interaction.followup.send(embed=working_embed)
 

@@ -1,13 +1,14 @@
 """
-gemini_client.py — Wraps the Gemini API to turn NLP prompts into web app blueprints.
+gemini_client.py — Two-pass code generation engine.
 
-DESIGN PHILOSOPHY (v3 — Web-App Only):
-  The old approach tried to serialize MULTIPLE files inside a JSON blob, which
-  meant any unescaped quote in generated code would break the entire payload.
-
-  New approach: Gemini outputs ONE self-contained index.html (all CSS + JS + HTML
-  inlined), plus a minimal README and Dockerfile. This is tiny, reliable, and
-  always works for web/SaaS apps.
+ARCHITECTURE (v4 — Two-Pass):
+  Pass 1 (Plan):     Gemini returns a small JSON manifest listing the files
+                     to generate + metadata. Zero code = zero encoding issues.
+  Pass 2 (Generate): For each file in the manifest, Gemini generates the
+                     content as plain text (no JSON wrapping). Safe for any
+                     language, any size, any special characters.
+  Result:            Full multi-file apps (Flask, Next.js, Docker, docs, etc.)
+                     with zero JSON encoding crashes.
 """
 
 import time
@@ -17,35 +18,54 @@ from google import genai
 from google.genai import types
 from config import config
 
-# ── System Prompt ──────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """You are an elite front-end engineer specializing in building beautiful, 
-functional, single-page web applications with pure HTML, CSS, and JavaScript.
+# ── System Prompts ─────────────────────────────────────────────────────────────
 
-Your ONLY job: receive a plain-English description and return a JSON object.
+PLAN_PROMPT = """You are an expert software architect specializing in full-stack web and SaaS applications.
 
-OUTPUT FORMAT (strict JSON, no markdown, no explanation):
+Your job is to receive a plain-English app description and return a JSON PLAN — a list of files to generate.
+
+OUTPUT FORMAT (strict JSON object, no markdown):
 {
   "repo_name": "kebab-case-app-name",
-  "description": "One-line description",
-  "tech_stack": ["HTML", "CSS", "JavaScript"],
-  "html": "<FULL self-contained index.html content here>",
-  "readme": "Short README.md in markdown",
-  "how_to_run": "Open index.html in a browser."
+  "description": "One-line description of the app",
+  "tech_stack": ["Python", "Flask", "HTML", "CSS", "JavaScript"],
+  "files": [
+    {"path": "app.py", "description": "Main Flask application with all routes"},
+    {"path": "templates/index.html", "description": "Main HTML page with inline CSS and JS"},
+    {"path": "requirements.txt", "description": "Python dependencies"},
+    {"path": "Dockerfile", "description": "Docker container config"},
+    {"path": ".gitignore", "description": "Git ignore rules"},
+    {"path": "README.md", "description": "Project overview and setup guide"},
+    {"path": "TECHNICAL_DOCS.md", "description": "API, architecture, and code documentation"},
+    {"path": "HOW_TO_RUN.md", "description": "Step-by-step instructions to run locally and with Docker"}
+  ],
+  "how_to_run": "Brief steps: clone repo, install deps, run app"
 }
 
-RULES FOR THE HTML:
-1. Everything in ONE index.html file. Inline all CSS in <style> and all JS in <script>.
-2. Use Google Fonts (via CDN link tag) for beautiful typography.
-3. Build a FULLY FUNCTIONAL, visually stunning app. No placeholders. No TODO.
-4. Use modern design: dark theme OR light theme with gradient accents, smooth animations,
-   hover effects, clean cards. Make it look like a premium product.
-5. Include responsive design (mobile-friendly).
-6. If the app needs an AI/API feature (translation, generation etc.), use the Gemini API
-   directly from JS with fetch(). Use placeholder const GEMINI_API_KEY = "YOUR_KEY_HERE";
-   that the user can fill in.
-7. Keep your HTML CONCISE — use CSS and JS efficiently. Avoid repeating the same styles.
+RULES:
+1. Support any tech stack the user requests: Flask, FastAPI, Node/Express, pure HTML/JS, etc.
+2. Include Dockerfile always for every project.
+3. Include README.md, TECHNICAL_DOCS.md, and HOW_TO_RUN.md always.
+4. repo_name: lowercase, hyphens only, no spaces.
+5. Be realistic about the file list — include all files the app actually needs.
+6. Do NOT include any code in this response. Only the manifest.
+"""
 
-repo_name must be lowercase with hyphens only. No spaces.
+FILE_PROMPT_TEMPLATE = """You are an expert {tech} developer.
+
+Generate the COMPLETE content for this file: {file_path}
+Description: {file_description}
+
+This file is part of: {app_description}
+Tech stack: {tech_stack}
+
+Rules:
+- Output ONLY the file content. No explanations, no markdown fences, no preamble.
+- Make it complete and production-ready. No placeholders, no TODO comments.
+- Include proper error handling, comments where helpful, and follow best practices.
+- For HTML templates, make them visually stunning: modern design, Google Fonts via CDN, dark/light theme with gradient accents, smooth animations, mobile-responsive.
+- For Python/backend files, use proper logging, environment variables for secrets.
+- For Dockerfiles, use multi-stage builds and best security practices where appropriate.
 """
 
 
@@ -54,91 +74,129 @@ class GeminiClient:
         self.client = genai.Client(api_key=config.GEMINI_API_KEY)
         self.model_name = "gemini-2.5-flash"
 
-    def generate_app(self, user_prompt: str) -> dict:
-        """
-        Send a natural language prompt and return a structured web app blueprint.
-        Uses a single index.html approach to eliminate multi-file JSON complexity.
-        """
-        print(f"[Gemini] 🚀 Generating web app for: {user_prompt[:80]}...")
-
-        full_prompt = (
-            f"Build this web app: {user_prompt}\n\n"
-            "Return ONLY valid JSON. The 'html' field must be a complete, working index.html "
-            "with all CSS and JS inlined. Do NOT use markdown code fences."
+    def _call(self, prompt: str, system: str, json_mode: bool = False, max_tokens: int = 8192) -> str:
+        """Internal helper to call Gemini with retry logic."""
+        cfg_kwargs = dict(
+            system_instruction=system,
+            temperature=0.4,
+            max_output_tokens=max_tokens,
         )
+        if json_mode:
+            cfg_kwargs["response_mime_type"] = "application/json"
 
         last_err = None
         for attempt in range(3):
             try:
                 response = self.client.models.generate_content(
                     model=self.model_name,
-                    contents=full_prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_PROMPT,
-                        temperature=0.5,
-                        max_output_tokens=32000,  # Smaller limit = less chance of truncation
-                        response_mime_type="application/json",
-                    ),
+                    contents=prompt,
+                    config=types.GenerateContentConfig(**cfg_kwargs),
                 )
-                break
+                return response.text.strip(), response
             except Exception as e:
                 last_err = e
                 err_str = str(e).lower()
                 if "quota" in err_str or "resource" in err_str or "429" in err_str:
                     wait = 30 * (2 ** attempt)
-                    print(f"[Gemini] Rate limit hit (attempt {attempt+1}/3). Waiting {wait}s...")
+                    print(f"[Gemini] Rate limit (attempt {attempt+1}/3). Waiting {wait}s...")
                     time.sleep(wait)
                 else:
                     raise
-        else:
-            raise last_err  # type: ignore
+        raise last_err  # type: ignore
 
-        raw_text = response.text.strip()
+    def generate_app(self, user_prompt: str) -> dict:
+        """
+        Two-pass generation:
+          Pass 1: Get a JSON manifest (file list + metadata).
+          Pass 2: Generate each file's content as plain text.
+        Returns a dict compatible with the AppGenerator pipeline.
+        """
+        # ── Pass 1: Plan ──────────────────────────────────────────────────────
+        print(f"[Gemini] 📋 Pass 1: Planning app structure...")
+        plan_text, plan_response = self._call(
+            prompt=f"Plan this application: {user_prompt}",
+            system=PLAN_PROMPT,
+            json_mode=True,
+            max_tokens=4096,  # Plan is small
+        )
 
-        # Strip any markdown code fences (should not happen with mime type, but just in case)
-        raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.MULTILINE)
-        raw_text = re.sub(r"\s*```$", "", raw_text, flags=re.MULTILINE)
-        raw_text = raw_text.strip()
+        # Strip fences just in case
+        plan_text = re.sub(r"^```(?:json)?\s*", "", plan_text, flags=re.MULTILINE)
+        plan_text = re.sub(r"\s*```$", "", plan_text, flags=re.MULTILINE).strip()
 
-        # Parse the JSON
         try:
-            data = json.loads(raw_text)
+            plan = json.loads(plan_text)
         except json.JSONDecodeError as e:
-            snippet = raw_text[-200:]
-            raise ValueError(
-                f"❌ Gemini returned invalid JSON: {e}\n"
-                f"End of response: ...{snippet}\n\n"
-                "Try rephrasing your prompt to be more concise."
+            raise ValueError(f"❌ Failed to parse plan from Gemini: {e}\nRaw: {plan_text[:500]}")
+
+        if not isinstance(plan, dict) or "files" not in plan:
+            raise ValueError(f"❌ Gemini returned an unexpected plan format: {plan_text[:300]}")
+
+        repo_name = plan.get("repo_name", "my-web-app")
+        description = plan.get("description", user_prompt[:100])
+        tech_stack = plan.get("tech_stack", ["HTML", "CSS", "JavaScript"])
+        how_to_run = plan.get("how_to_run", "See HOW_TO_RUN.md")
+        file_manifest = plan.get("files", [])
+
+        print(f"[Gemini] ✅ Plan ready: {len(file_manifest)} files for '{repo_name}'")
+        print(f"[Gemini]    Tech stack: {', '.join(tech_stack)}")
+
+        # ── Pass 2: Generate each file ────────────────────────────────────────
+        tech_str = ", ".join(tech_stack)
+        generated_files = []
+
+        # Primary tech for the FILE_PROMPT_TEMPLATE
+        primary_tech = tech_stack[0] if tech_stack else "web"
+
+        for i, file_entry in enumerate(file_manifest):
+            file_path = file_entry.get("path", f"file_{i}.txt")
+            file_desc = file_entry.get("description", f"File {i}")
+
+            print(f"[Gemini] 📝 Generating ({i+1}/{len(file_manifest)}): {file_path}")
+
+            file_prompt = FILE_PROMPT_TEMPLATE.format(
+                tech=primary_tech,
+                file_path=file_path,
+                file_description=file_desc,
+                app_description=f"{repo_name}: {description}",
+                tech_stack=tech_str,
             )
 
-        if not isinstance(data, dict):
-            raise ValueError(
-                f"❌ Unexpected response format from Gemini (got {type(data).__name__}, expected object). "
-                "Please try again."
-            )
+            # Bigger token budget for source files, smaller for docs
+            is_doc = file_path.endswith(".md") or file_path.endswith(".txt")
+            max_tok = 4096 if is_doc else 16000
 
-        # Validate
-        if not data.get("html"):
-            raise ValueError("❌ Gemini did not generate the HTML for your app. Please try again.")
+            try:
+                content, _ = self._call(
+                    prompt=file_prompt,
+                    system=f"You are an expert {primary_tech} developer. Output ONLY raw file content, no markdown fences.",
+                    json_mode=False,
+                    max_tokens=max_tok,
+                )
+                generated_files.append({"path": file_path, "content": content})
+                print(f"[Gemini]    ✅ {file_path} ({len(content)} chars)")
+            except Exception as e:
+                print(f"[Gemini]    ⚠️ Failed to generate {file_path}: {e}")
+                generated_files.append({
+                    "path": file_path,
+                    "content": f"# Error generating this file\n# {e}\n"
+                })
 
-        if not data.get("repo_name"):
-            data["repo_name"] = "my-web-app"
+        # ── Inject token count from the plan call ─────────────────────────────
+        tokens_used = None
+        if hasattr(plan_response, "usage_metadata") and plan_response.usage_metadata:
+            tokens_used = plan_response.usage_metadata.candidates_token_count
+            print(f"[Gemini] 📊 Plan tokens: {tokens_used}")
 
-        # Build the files list from the single-html approach
-        # This stays compatible with the rest of the pipeline (github_client, pipeline.py)
-        data["files"] = [
-            {"path": "index.html", "content": data["html"]},
-            {"path": "README.md",  "content": data.get("readme", f"# {data['repo_name']}\n\n{data.get('description', '')}")},
-        ]
+        print(f"[Gemini] 🎉 Done! Generated {len(generated_files)} files for '{repo_name}'")
 
-        # Inject token usage stats
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            data["tokens_used"] = response.usage_metadata.candidates_token_count
-            data["tokens_prompt"] = response.usage_metadata.prompt_token_count
-            print(f"[Gemini] 📊 Tokens: {data['tokens_used']} out / {data['tokens_prompt']} in")
-
-        how_to_run = data.get("how_to_run", "Open index.html in your browser.")
-        data["how_to_run"] = how_to_run
-
-        print(f"[Gemini] ✅ Generated '{data['repo_name']}' — {len(data['files'])} files")
-        return data
+        return {
+            "repo_name": repo_name,
+            "description": description,
+            "tech_stack": tech_stack,
+            "files": generated_files,
+            "readme": next((f["content"] for f in generated_files if f["path"] == "README.md"), ""),
+            "technical_docs": next((f["content"] for f in generated_files if f["path"] == "TECHNICAL_DOCS.md"), ""),
+            "how_to_run": how_to_run,
+            "tokens_used": tokens_used,
+        }
