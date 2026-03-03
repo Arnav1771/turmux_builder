@@ -9,7 +9,12 @@ from dotenv import load_dotenv
 
 # Automatically find and load .env from the appbuilder directory
 _env_path = Path(__file__).parent / ".env"
-load_dotenv(dotenv_path=_env_path)
+print(f"[Config] Loading .env from: {_env_path}", flush=True)
+if _env_path.exists():
+    load_dotenv(dotenv_path=_env_path)
+    print("[Config] ✅ .env file found.", flush=True)
+else:
+    print("[Config] ⚠️  .env file NOT found! Using system environment variables.", flush=True)
 
 
 class Config:

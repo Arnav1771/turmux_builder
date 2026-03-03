@@ -35,15 +35,38 @@ from core.pipeline import run_pipeline
 # ── Bot setup ────────────────────────────────────────────────────────────────
 
 intents = discord.Intents.default()
+intents.message_content = True  # CRITICAL: Required for !sync command to work
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
 
 @bot.event
 async def on_ready():
-    await tree.sync()
-    print(f"[Discord] ✅ Logged in as {bot.user} (ID: {bot.user.id})")
-    print("[Discord] Slash commands synced. Bot is ready!")
+    print(f"[Discord] ✅ Logged in as {bot.user} (ID: {bot.user.id})", flush=True)
+    print("[Discord] ⚙️ Syncing slash commands (global)...", flush=True)
+    try:
+        synced = await tree.sync()
+        print(f"[Discord] 🚀 Synced {len(synced)} slash commands globally.", flush=True)
+    except Exception as e:
+        print(f"[Discord] ❌ Sync failed: {e}", flush=True)
+    print("[Discord] Bot is ready! If commands don't show up, try typing !sync in your server.", flush=True)
+
+
+@bot.command()
+@commands.is_owner()
+async def sync(ctx):
+    """Admin command to force a sync to the current server (much faster than global)."""
+    print(f"[Discord] ⚙️ Manual sync triggered by {ctx.author}", flush=True)
+    await ctx.send("⚙️ Syncing commands to this server...")
+    try:
+        # Sync to the current guild for instant results
+        bot.tree.copy_global_to(guild=ctx.guild)
+        synced = await bot.tree.sync(guild=ctx.guild)
+        await ctx.send(f"✅ Synced {len(synced)} commands to this server! Try /build now.")
+        print(f"[Discord] ✅ Guild sync complete.", flush=True)
+    except Exception as e:
+        print(f"[Discord] ❌ Manual sync failed: {e}", flush=True)
+        await ctx.send(f"❌ Sync failed: {e}")
 
 
 # ── /build command ────────────────────────────────────────────────────────────
@@ -153,11 +176,11 @@ async def status_command(interaction: discord.Interaction):
 if __name__ == "__main__":
     token = config.DISCORD_BOT_TOKEN
     if not token or token == "PASTE_YOUR_BOT_TOKEN_HERE":
-        print("\n❌ ERROR: DISCORD_BOT_TOKEN is not set in .env!")
-        print("   Go to: https://discord.com/developers/applications")
-        print("   → Your App → Bot → Reset Token → Copy it")
-        print("   → Paste it in appbuilder/.env as DISCORD_BOT_TOKEN=...")
+        print("\n❌ ERROR: DISCORD_BOT_TOKEN is not set in .env!", flush=True)
+        print("   Go to: https://discord.com/developers/applications", flush=True)
+        print("   → Your App → Bot → Reset Token → Copy it", flush=True)
+        print("   → Paste it in appbuilder/.env as DISCORD_BOT_TOKEN=...", flush=True)
         sys.exit(1)
     
-    print("[Discord] Starting Turmux Vibe bot...")
+    print("[Discord] Starting Turmux Vibe bot...", flush=True)
     bot.run(token)
