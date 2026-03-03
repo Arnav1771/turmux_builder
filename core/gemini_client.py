@@ -70,9 +70,16 @@ Rules:
 
 
 class GeminiClient:
+    _override_model: str | None = None  # Set by /model Discord command at runtime
+
     def __init__(self):
         self.client = genai.Client(api_key=config.GEMINI_API_KEY)
         self.model_name = "gemini-2.5-flash"
+
+    @property
+    def active_model(self) -> str:
+        """Return the currently active model — respects runtime override from /model command."""
+        return GeminiClient._override_model or self.model_name
 
     def _call(self, prompt: str, system: str, json_mode: bool = False, max_tokens: int = 8192) -> str:
         """Internal helper to call Gemini with retry logic."""
@@ -88,7 +95,7 @@ class GeminiClient:
         for attempt in range(3):
             try:
                 response = self.client.models.generate_content(
-                    model=self.model_name,
+                    model=self.active_model,
                     contents=prompt,
                     config=types.GenerateContentConfig(**cfg_kwargs),
                 )
