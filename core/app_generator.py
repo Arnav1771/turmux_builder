@@ -44,35 +44,37 @@ class AppGenerator:
         # Step 1: Call Gemini
         raw = self.gemini.generate_app(prompt)
         
-        # Step 2: Parse files
+        # Step 2: Parse files (already built by gemini_client for the web-app approach)
         files = [
             GeneratedFile(path=f["path"], content=f["content"])
             for f in raw.get("files", [])
         ]
         
-        # Inject README.md and TECHNICAL_DOCS.md as files too
-        # (so they get committed to the repo)
+        # Fall-through safety: add any extra doc files if they're missing
         file_paths = {f.path for f in files}
 
+        readme_content = raw.get("readme", f"# {raw['repo_name']}\n\n{raw.get('description', '')}")
         if "README.md" not in file_paths:
-            files.insert(0, GeneratedFile(path="README.md", content=raw["readme"]))
+            files.insert(0, GeneratedFile(path="README.md", content=readme_content))
 
-        if "TECHNICAL_DOCS.md" not in file_paths and raw.get("technical_docs"):
-            files.append(GeneratedFile(path="TECHNICAL_DOCS.md", content=raw["technical_docs"]))
-
-        # Inject HOW_TO_RUN.md
+        # HOW_TO_RUN.md
+        how_to_run = raw.get("how_to_run", "Open index.html in your browser.")
         if "HOW_TO_RUN.md" not in file_paths:
-            files.append(GeneratedFile(path="HOW_TO_RUN.md", content=raw.get("how_to_run", "")))
+            files.append(GeneratedFile(path="HOW_TO_RUN.md", content=how_to_run))
 
         bundle = AppBundle(
             repo_name=raw["repo_name"],
             description=raw.get("description", prompt[:100]),
-            tech_stack=raw.get("tech_stack", []),
+            tech_stack=raw.get("tech_stack", ["HTML", "CSS", "JavaScript"]),
             files=files,
-            readme=raw["readme"],
+            readme=readme_content,
             technical_docs=raw.get("technical_docs", ""),
-            how_to_run=raw.get("how_to_run", ""),
+            how_to_run=how_to_run,
         )
+
+        # Pass token stats through if present
+        if "tokens_used" in raw:
+            bundle.__dict__["tokens_used"] = raw["tokens_used"]
 
         print(f"[AppGenerator] ✅ Bundle ready: {len(bundle.files)} files, repo: {bundle.repo_name}")
         return bundle

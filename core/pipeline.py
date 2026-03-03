@@ -48,6 +48,7 @@ def run_pipeline(prompt: str) -> dict:
         "how_to_run": bundle.how_to_run,
         "tech_stack": bundle.tech_stack,
         "file_count": len(bundle.files),
+        "tokens_used": bundle.__dict__.get("tokens_used"),
     }
 
     print(f"\n{'='*60}")
